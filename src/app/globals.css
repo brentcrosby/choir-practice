@@ -66,6 +66,8 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
 .emptyScore h1 { margin-bottom: 8px; }
 .emptyScore p { margin: 0; max-width: 560px; color: #666; }
 .scoreSvg { min-width: 900px; padding: 18px; }
+.scorePage { margin: 0 auto 18px; }
+.scorePage:last-child { margin-bottom: 0; }
 .scoreSvg svg { display: block; max-width: 100%; height: auto; margin: 0 auto; background: white; box-shadow: 0 1px 3px rgb(0 0 0 / 10%); }
 .scoreSvg .currentMeasure > path,
 .scoreSvg .currentMeasure > polygon,

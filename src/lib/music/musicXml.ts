@@ -130,6 +130,7 @@ function parsePartElement(
 
   let divisions = DEFAULT_DIVISIONS;
   let cursorBeat = 0;
+  let previousNoteStartBeat = 0;
   const pendingTies = new Map<string, PendingTie>();
 
   for (const measureElement of children(partElement, "measure")) {
@@ -186,7 +187,7 @@ function parsePartElement(
         case "note": {
           const isChord = firstChild(node, "chord") !== undefined;
           const duration = durationBeats(node, divisions);
-          const startBeat = cursorBeat;
+          const startBeat = isChord ? previousNoteStartBeat : cursorBeat;
           const staffId = childText(node, "staff") ?? "1";
           const voiceId = childText(node, "voice") ?? "1";
           ensureVoice(part, staffId, voiceId);
@@ -217,9 +218,10 @@ function parsePartElement(
           }
 
           if (!isChord) {
+            previousNoteStartBeat = startBeat;
             cursorBeat += duration;
-            measureEndBeat = Math.max(measureEndBeat, cursorBeat);
           }
+          measureEndBeat = Math.max(measureEndBeat, startBeat + duration, cursorBeat);
           break;
         }
 

@@ -22,6 +22,18 @@ export type PlaybackState = {
   loop: LoopRange | null;
 };
 
+export type BeatWindow = {
+  startBeat: number;
+  endBeat: number;
+};
+
+export type TransportClock = {
+  transportStartBeat: number;
+  transportStartTime: number;
+  currentBeat: number;
+  scheduledUntilBeat: number;
+};
+
 export function createPlaybackState(score: NormalizedScore): PlaybackState {
   return {
     status: "stopped",
@@ -81,6 +93,10 @@ export function getLoopWindow(score: NormalizedScore, loop: LoopRange | null): {
   };
 }
 
+export function getScoreEndBeat(score: NormalizedScore): number {
+  return score.measures.reduce((endBeat, measure) => Math.max(endBeat, measure.startBeat + measure.durationBeats), 0);
+}
+
 export function seekBeatForMeasure(score: NormalizedScore, measureNumber: number): number {
   return findMeasure(score, measureNumber)?.startBeat ?? 0;
 }
@@ -94,6 +110,57 @@ export function currentMeasureNumber(score: NormalizedScore, beat: number): numb
 
 export function eventsInBeatWindow(events: NoteEvent[], startBeat: number, endBeat: number): NoteEvent[] {
   return events.filter((event) => event.startBeat >= startBeat && event.startBeat < endBeat);
+}
+
+export function readTransportBeat(
+  tempoEvents: TempoEvent[],
+  clock: Pick<TransportClock, "transportStartBeat" | "transportStartTime">,
+  currentTime: number,
+  tempoMultiplier: number,
+): number {
+  const elapsed = Math.max(0, currentTime - clock.transportStartTime);
+  return beatAtElapsedSeconds(tempoEvents, clock.transportStartBeat, elapsed, tempoMultiplier);
+}
+
+export function rebaseTransportClock(
+  tempoEvents: TempoEvent[],
+  clock: TransportClock,
+  currentTime: number,
+  tempoMultiplier: number,
+): TransportClock {
+  const currentBeat = readTransportBeat(tempoEvents, clock, currentTime, tempoMultiplier);
+  return {
+    transportStartBeat: currentBeat,
+    transportStartTime: currentTime,
+    currentBeat,
+    scheduledUntilBeat: currentBeat,
+  };
+}
+
+export function shouldWrapLoop(score: NormalizedScore, currentBeat: number, loop: LoopRange | null): boolean {
+  const loopWindow = getLoopWindow(score, loop);
+  return loopWindow !== null && currentBeat >= loopWindow.endBeat;
+}
+
+export function shouldStopAtScoreEnd(score: NormalizedScore, currentBeat: number, loop: LoopRange | null): boolean {
+  return loop === null && currentBeat >= getScoreEndBeat(score);
+}
+
+export function schedulerBeatWindow(
+  score: NormalizedScore,
+  currentBeat: number,
+  lookaheadSeconds: number,
+  tempoMultiplier: number,
+  loop: LoopRange | null,
+): BeatWindow {
+  const rawEndBeat = beatAtElapsedSeconds(score.tempoEvents, currentBeat, lookaheadSeconds, tempoMultiplier);
+  const loopWindow = getLoopWindow(score, loop);
+  const hardEndBeat = loopWindow?.endBeat ?? getScoreEndBeat(score);
+
+  return {
+    startBeat: currentBeat,
+    endBeat: Math.min(rawEndBeat, hardEndBeat),
+  };
 }
 
 export function secondsBetweenBeats(

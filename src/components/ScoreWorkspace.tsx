@@ -17,7 +17,7 @@ import {
 
 type RenderState = {
   status: "idle" | "rendering" | "ready" | "error";
-  svg: string;
+  pages: string[];
   error?: string;
 };
 
@@ -25,7 +25,7 @@ export function ScoreWorkspace() {
   const [score, setScore] = useState<NormalizedScore | null>(null);
   const [fileName, setFileName] = useState<string>("");
   const [error, setError] = useState<string>("");
-  const [renderState, setRenderState] = useState<RenderState>({ status: "idle", svg: "" });
+  const [renderState, setRenderState] = useState<RenderState>({ status: "idle", pages: [] });
   const [status, setStatus] = useState<TransportStatus>("stopped");
   const [currentBeat, setCurrentBeat] = useState(0);
   const [currentMeasure, setCurrentMeasure] = useState(1);
@@ -57,6 +57,11 @@ export function ScoreWorkspace() {
         setCurrentBeat(beat);
         setCurrentMeasure(measureNumber);
       },
+      onEnded: () => {
+        setStatus("stopped");
+        setCurrentBeat(0);
+        setCurrentMeasure(score.measures[0]?.number ?? 1);
+      },
     });
   }, [score]);
 
@@ -69,10 +74,15 @@ export function ScoreWorkspace() {
         setCurrentBeat(beat);
         setCurrentMeasure(measureNumber);
       },
+      onEnded: () => {
+        setStatus("stopped");
+        setCurrentBeat(0);
+        setCurrentMeasure(score?.measures[0]?.number ?? 1);
+      },
     };
     latestEngineOptionsRef.current = nextOptions;
     engineRef.current?.updateOptions(nextOptions);
-  }, [tempoMultiplier, parts, loop]);
+  }, [tempoMultiplier, parts, loop, score]);
 
   useEffect(() => {
     if (!score) {
@@ -97,24 +107,26 @@ export function ScoreWorkspace() {
           breaks: "auto",
         });
         const loaded = toolkit.loadData(scoreToRender.sourceXml);
-        const svg = toolkit.renderToSVG(1, {});
+        const pageCount = Math.max(1, toolkit.getPageCount());
+        const pages = Array.from({ length: pageCount }, (_, pageIndex) => toolkit.renderToSVG(pageIndex + 1, {}))
+          .filter((svg) => svg.trim().length > 0);
 
         if (!cancelled) {
-          if (!loaded || !svg.trim()) {
+          if (!loaded || pages.length === 0) {
             setRenderState({
               status: "error",
-              svg: "",
+              pages: [],
               error: "Verovio could not render this MusicXML score.",
             });
           } else {
-            setRenderState({ status: "ready", svg });
+            setRenderState({ status: "ready", pages });
           }
         }
       } catch (renderError) {
         if (!cancelled) {
           setRenderState({
             status: "error",
-            svg: "",
+            pages: [],
             error: renderError instanceof Error ? renderError.message : "Notation rendering failed.",
           });
         }
@@ -138,7 +150,7 @@ export function ScoreWorkspace() {
     const measureIndex = measureNumbers.findIndex((measureNumber) => measureNumber === currentMeasure);
     measureElements[measureIndex]?.classList.add("currentMeasure");
     measureElements[measureIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [currentMeasure, renderState.svg, measureNumbers]);
+  }, [currentMeasure, renderState.pages, measureNumbers]);
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -149,7 +161,7 @@ export function ScoreWorkspace() {
     resetPlayback();
     setFileName(file.name);
     setError("");
-    setRenderState({ status: "idle", svg: "" });
+    setRenderState({ status: "idle", pages: [] });
 
     if (file.name.toLowerCase().endsWith(".mxl")) {
       setScore(null);
@@ -167,7 +179,7 @@ export function ScoreWorkspace() {
       const xml = await file.text();
       const parsedScore = parseMusicXml(xml);
       const initialPlayback = createPlaybackState(parsedScore);
-      setRenderState({ status: "rendering", svg: "" });
+      setRenderState({ status: "rendering", pages: [] });
       setScore(parsedScore);
       setParts(initialPlayback.parts);
       setTempoMultiplier(initialPlayback.tempoMultiplier);
@@ -176,7 +188,7 @@ export function ScoreWorkspace() {
       setCurrentMeasure(parsedScore.measures[0]?.number ?? 1);
     } catch (parseError) {
       setScore(null);
-      setRenderState({ status: "idle", svg: "" });
+      setRenderState({ status: "idle", pages: [] });
       setError(parseError instanceof MusicXmlParseError || parseError instanceof Error ? parseError.message : "MusicXML parsing failed.");
     }
   }
@@ -275,11 +287,15 @@ export function ScoreWorkspace() {
             <div className="emptyScore errorText" role="alert">{renderState.error}</div>
           ) : null}
           {score && renderState.status === "ready" ? (
-            <div
-              ref={svgHostRef}
-              className="scoreSvg"
-              dangerouslySetInnerHTML={{ __html: renderState.svg }}
-            />
+            <div ref={svgHostRef} className="scoreSvg">
+              {renderState.pages.map((pageSvg, pageIndex) => (
+                <div
+                  className="scorePage"
+                  key={pageIndex}
+                  dangerouslySetInnerHTML={{ __html: pageSvg }}
+                />
+              ))}
+            </div>
           ) : null}
         </div>
       </div>

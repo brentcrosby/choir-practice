@@ -6,8 +6,12 @@ import {
   getLoopWindow,
   LoopRange,
   PartMix,
+  rebaseTransportClock,
   resolvePartGain,
+  schedulerBeatWindow,
   secondsBetweenBeats,
+  shouldStopAtScoreEnd,
+  shouldWrapLoop,
 } from "./state";
 
 export type WebAudioEngineOptions = {
@@ -15,6 +19,7 @@ export type WebAudioEngineOptions = {
   parts: Record<string, PartMix>;
   loop: LoopRange | null;
   onBeat?: (beat: number, measureNumber: number) => void;
+  onEnded?: () => void;
 };
 
 const LOOKAHEAD_SECONDS = 0.16;
@@ -42,6 +47,31 @@ export class WebAudioPlaybackEngine {
   }
 
   updateOptions(options: WebAudioEngineOptions): void {
+    if (
+      this.score &&
+      this.options &&
+      this.audioContext &&
+      this.timer !== null &&
+      this.options.tempoMultiplier !== options.tempoMultiplier
+    ) {
+      const rebased = rebaseTransportClock(
+        this.score.tempoEvents,
+        {
+          transportStartBeat: this.transportStartBeat,
+          transportStartTime: this.transportStartTime,
+          currentBeat: this.currentBeat,
+          scheduledUntilBeat: this.scheduledUntilBeat,
+        },
+        this.audioContext.currentTime,
+        this.options.tempoMultiplier,
+      );
+      this.transportStartBeat = rebased.transportStartBeat;
+      this.transportStartTime = rebased.transportStartTime;
+      this.currentBeat = rebased.currentBeat;
+      this.scheduledUntilBeat = rebased.scheduledUntilBeat;
+      this.stopActiveNodes();
+    }
+
     this.options = options;
   }
 
@@ -121,7 +151,7 @@ export class WebAudioPlaybackEngine {
 
     this.refreshCurrentBeat();
     const loopWindow = getLoopWindow(this.score, this.options.loop);
-    if (loopWindow && this.currentBeat >= loopWindow.endBeat) {
+    if (shouldWrapLoop(this.score, this.currentBeat, this.options.loop) && loopWindow) {
       this.currentBeat = loopWindow.startBeat;
       this.transportStartBeat = loopWindow.startBeat;
       this.transportStartTime = this.audioContext.currentTime;
@@ -129,21 +159,27 @@ export class WebAudioPlaybackEngine {
       this.stopActiveNodes();
     }
 
-    const windowEndBeat = beatAtElapsedSeconds(
-      this.score.tempoEvents,
+    if (shouldStopAtScoreEnd(this.score, this.currentBeat, this.options.loop)) {
+      this.finishAtScoreEnd();
+      return;
+    }
+
+    const window = schedulerBeatWindow(
+      this.score,
       this.currentBeat,
       LOOKAHEAD_SECONDS,
       this.options.tempoMultiplier,
+      this.options.loop,
     );
 
-    const events = eventsInBeatWindow(this.score.noteEvents, this.scheduledUntilBeat, windowEndBeat);
+    const events = eventsInBeatWindow(this.score.noteEvents, this.scheduledUntilBeat, window.endBeat);
     for (const event of events) {
       if (!loopWindow || (event.startBeat >= loopWindow.startBeat && event.startBeat < loopWindow.endBeat)) {
         this.scheduleNote(event);
       }
     }
 
-    this.scheduledUntilBeat = Math.max(this.scheduledUntilBeat, windowEndBeat);
+    this.scheduledUntilBeat = Math.max(this.scheduledUntilBeat, window.endBeat);
     this.options.onBeat?.(this.currentBeat, currentMeasureNumber(this.score, this.currentBeat));
   }
 
@@ -194,6 +230,20 @@ export class WebAudioPlaybackEngine {
 
     const elapsed = Math.max(0, this.audioContext.currentTime - this.transportStartTime);
     this.currentBeat = beatAtElapsedSeconds(this.score.tempoEvents, this.transportStartBeat, elapsed, this.options.tempoMultiplier);
+  }
+
+  private finishAtScoreEnd(): void {
+    if (!this.score || !this.options) {
+      return;
+    }
+
+    this.clearTimer();
+    this.stopActiveNodes();
+    this.currentBeat = 0;
+    this.transportStartBeat = 0;
+    this.scheduledUntilBeat = 0;
+    this.options.onBeat?.(0, currentMeasureNumber(this.score, 0));
+    this.options.onEnded?.();
   }
 
   private stopActiveNodes(): void {
