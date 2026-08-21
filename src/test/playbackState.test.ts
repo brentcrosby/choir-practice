@@ -6,10 +6,16 @@ import {
   beatAtElapsedSeconds,
   createPlaybackState,
   effectiveBpm,
+  getScoreEndBeat,
   getLoopWindow,
+  readTransportBeat,
+  rebaseTransportClock,
   resolvePartGain,
+  schedulerBeatWindow,
   secondsBetweenBeats,
   seekBeatForMeasure,
+  shouldStopAtScoreEnd,
+  shouldWrapLoop,
 } from "@/lib/playback/state";
 import {
   createPracticeSession,
@@ -41,6 +47,46 @@ describe("playback state", () => {
     expect(seekBeatForMeasure(score, 3)).toBe(8);
     expect(getLoopWindow(score, { startMeasure: 2, endMeasure: 3 })).toEqual({ startBeat: 4, endBeat: 12 });
     expect(getLoopWindow(score, state.loop)).toBeNull();
+  });
+
+  it("clamps scheduler windows to active loop boundaries", () => {
+    const score = parseMusicXml(fixture);
+    const loop = { startMeasure: 2, endMeasure: 2 };
+
+    expect(schedulerBeatWindow(score, 6, 5, 1, loop)).toEqual({ startBeat: 6, endBeat: 8 });
+    expect(shouldWrapLoop(score, 7.99, loop)).toBe(false);
+    expect(shouldWrapLoop(score, 8, loop)).toBe(true);
+    expect(shouldStopAtScoreEnd(score, 16, loop)).toBe(false);
+  });
+
+  it("rebases the transport clock when tempo changes while keeping the current beat stable", () => {
+    const score = parseMusicXml(fixture);
+    const pitchesBefore = score.noteEvents.map((event) => event.midiNote);
+    const rebased = rebaseTransportClock(
+      score.tempoEvents,
+      {
+        transportStartBeat: 0,
+        transportStartTime: 10,
+        currentBeat: 0,
+        scheduledUntilBeat: 3,
+      },
+      11.25,
+      1,
+    );
+
+    expect(rebased.currentBeat).toBeCloseTo(2);
+    expect(readTransportBeat(score.tempoEvents, rebased, 11.25, 0.5)).toBeCloseTo(rebased.currentBeat);
+    expect(readTransportBeat(score.tempoEvents, rebased, 12.5, 0.5)).toBeCloseTo(3);
+    expect(score.noteEvents.map((event) => event.midiNote)).toEqual(pitchesBefore);
+  });
+
+  it("detects end-of-score behavior when no loop is active", () => {
+    const score = parseMusicXml(fixture);
+
+    expect(getScoreEndBeat(score)).toBe(16);
+    expect(schedulerBeatWindow(score, 15.5, 5, 1, null)).toEqual({ startBeat: 15.5, endBeat: 16 });
+    expect(shouldStopAtScoreEnd(score, 15.99, null)).toBe(false);
+    expect(shouldStopAtScoreEnd(score, 16, null)).toBe(true);
   });
 
   it("applies solo, mute, and volume rules deterministically", () => {
