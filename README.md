@@ -35,4 +35,12 @@ Then follow `AGENTS.md` and `PLAN.md`.
 
 ## Current state
 
-This repository is intentionally only a starter scaffold. The UI shell and core music-domain types exist; Milestone 1 is the first implementation target.
+Milestone 1 is implemented for uncompressed MusicXML:
+
+- Upload `.musicxml` or `.xml` scores.
+- Parse metadata, parts, staves, voices, measures, tempo, meter, and normalized note events.
+- Render notation with Verovio.
+- Play, pause, stop, seek by measure, change tempo, highlight the current measure, loop measures, and mix parts with volume, mute, and solo.
+- Run parser and playback-state tests with `npm test`.
+
+Compressed `.mxl` upload is intentionally rejected for now with a visible TODO rather than presented as working. PDF/OMR support has not started.
