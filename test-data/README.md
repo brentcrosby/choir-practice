@@ -8,3 +8,5 @@ Milestone 1 should include at least one tiny SATB MusicXML fixture designed to t
 - rests
 - at least two measures
 - deterministic part names
+
+`satb-demo.musicxml` is a generated four-part SATB fixture. It is not copied from a copyrighted score.

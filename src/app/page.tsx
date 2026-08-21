@@ -8,7 +8,6 @@ export default function Home() {
           <strong>Choir Practice</strong>
           <span className="subtitle">MusicXML-first rehearsal player</span>
         </div>
-        <button type="button" disabled>Upload score</button>
       </header>
       <ScoreWorkspace />
     </main>
